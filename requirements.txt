@@ -1,4 +1,5 @@
 numpy==1.24.3
 pyaudio==0.2.13
 scipy==1.10.1
-matplotlib==3.7.1 
+matplotlib==3.7.1
+tkinter  # Usually comes with Python installation 
