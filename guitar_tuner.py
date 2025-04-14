@@ -20,31 +20,88 @@ COLORS = {
     'warning': '#F1C40F',
     'error': '#E74C3C',
     'text': '#ECF0F1',
-    'secondary': '#34495E'
+    'secondary': '#34495E',
+    'button_hover': '#2980B9',
+    'button_pressed': '#2573A7',
+    'input_bg': '#34495E',
+    'border': '#7F8C8D',
+    'button_text': '#000000'  # Black text for buttons
 }
 
 class GuitarTuner:
     def __init__(self, root):
         self.root = root
         self.root.title("Guitar Tuner")
-        # Set window size and background
-        self.root.geometry("500x700")
+        # Set fixed window size and background
+        self.root.geometry("400x600")
         self.root.configure(bg=COLORS['background'])
         
-        # Make window resizable
-        self.root.rowconfigure(0, weight=1)
-        self.root.columnconfigure(0, weight=1)
-        
-        # Set minimum window size
-        self.root.minsize(400, 600)
+        # Prevent window resizing
+        self.root.resizable(False, False)
         
         # Configure style
         self.style = ttk.Style()
+        
+        # Configure Frame style
         self.style.configure('TFrame', background=COLORS['background'])
-        self.style.configure('TLabel', background=COLORS['background'], foreground=COLORS['text'])
-        self.style.configure('TButton', background=COLORS['accent'], foreground=COLORS['text'])
-        self.style.configure('TRadiobutton', background=COLORS['background'], foreground=COLORS['text'])
-        self.style.configure('TCombobox', fieldbackground=COLORS['secondary'], foreground=COLORS['text'])
+        
+        # Configure Label style
+        self.style.configure('TLabel', 
+                           background=COLORS['background'],
+                           foreground=COLORS['text'],
+                           font=('Arial', 10))
+        
+        # Configure Button style
+        self.style.configure('TButton',
+                           background=COLORS['accent'],
+                           foreground=COLORS['button_text'],  # Black text
+                           padding=(20, 10),
+                           font=('Arial', 12, 'bold'))
+        self.style.map('TButton',
+                      background=[('active', COLORS['button_hover']),
+                                ('pressed', COLORS['button_pressed'])],
+                      foreground=[('active', COLORS['button_text']),  # Keep black text on hover
+                                ('pressed', COLORS['button_text'])])  # Keep black text when pressed
+        
+        # Configure Radiobutton style
+        self.style.configure('TRadiobutton',
+                           background=COLORS['background'],
+                           foreground=COLORS['text'],
+                           font=('Arial', 10))
+        self.style.map('TRadiobutton',
+                      background=[('active', COLORS['background'])],
+                      foreground=[('active', COLORS['accent'])])
+        
+        # Configure Combobox style
+        self.style.configure('TCombobox',
+                           background='#ECF0F1',  # Light background
+                           foreground=COLORS['button_text'],  # Black text
+                           fieldbackground='#ECF0F1',  # Light background for the field
+                           arrowcolor=COLORS['button_text'],  # Black arrow
+                           borderwidth=1,
+                           relief='solid',
+                           padding=(5, 2))
+        
+        self.style.map('TCombobox',
+                      fieldbackground=[('readonly', '#ECF0F1')],  # Light background in readonly state
+                      selectbackground=[('readonly', COLORS['accent'])],
+                      selectforeground=[('readonly', COLORS['text'])],  # White text for selected item
+                      background=[('readonly', '#ECF0F1'),
+                                ('active', COLORS['accent'])],
+                      foreground=[('readonly', COLORS['button_text'])])  # Black text in readonly state
+        
+        # Make Combobox text readable
+        self.root.option_add('*TCombobox*Listbox.background', '#ECF0F1')  # Light background for dropdown
+        self.root.option_add('*TCombobox*Listbox.foreground', COLORS['button_text'])  # Black text for dropdown
+        self.root.option_add('*TCombobox*Listbox.selectBackground', COLORS['accent'])  # Blue for selected item
+        self.root.option_add('*TCombobox*Listbox.selectForeground', COLORS['text'])  # White text for selected item
+        self.root.option_add('*TCombobox*Listbox.font', ('Arial', 9))
+        
+        # Set Combobox to readonly state
+        self.root.option_add('*TCombobox*background', '#ECF0F1')  # Light background
+        self.root.option_add('*TCombobox*foreground', COLORS['button_text'])  # Black text
+        self.root.option_add('*TCombobox*fieldbackground', '#ECF0F1')  # Light background for field
+        self.root.option_add('*TCombobox*font', ('Arial', 9))
         
         # Configuration audio
         self.CHUNK = 2048
@@ -76,35 +133,73 @@ class GuitarTuner:
     def get_input_devices(self):
         """Récupère la liste des périphériques d'entrée audio"""
         devices = []
+        bluetooth_keywords = ['bluetooth', 'bt', 'wireless']  # Keywords to identify Bluetooth devices
+        
         for i in range(self.p.get_device_count()):
-            device_info = self.p.get_device_info_by_index(i)
-            if device_info['maxInputChannels'] > 0:  # C'est un périphérique d'entrée
-                name = device_info['name']
-                devices.append((name, i))
+            try:
+                device_info = self.p.get_device_info_by_index(i)
+                if device_info['maxInputChannels'] > 0:  # C'est un périphérique d'entrée
+                    name = device_info['name'].lower()
+                    
+                    # Skip Bluetooth devices
+                    if any(keyword in name for keyword in bluetooth_keywords):
+                        print(f"Skipping Bluetooth device: {device_info['name']}")
+                        continue
+                    
+                    # Test if the device can be opened with our settings
+                    try:
+                        test_stream = self.p.open(
+                            format=self.FORMAT,
+                            channels=self.CHANNELS,
+                            rate=self.RATE,
+                            input=True,
+                            input_device_index=i,
+                            frames_per_buffer=self.CHUNK,
+                            start=False  # Don't start the stream, just test if it can be opened
+                        )
+                        test_stream.close()
+                        devices.append((device_info['name'], i))
+                        print(f"Added USB device: {device_info['name']}")
+                    except Exception as e:
+                        print(f"Device {device_info['name']} is not compatible: {str(e)}")
+            except Exception as e:
+                print(f"Error getting device info for index {i}: {str(e)}")
+        
+        if not devices:
+            print("No compatible USB audio devices found")
+        
         return devices
     
     def on_device_change(self, event):
         """Gestion du changement de périphérique audio"""
-        selection = self.device_combo.get()
-        device_index = None
-        
-        # Trouver l'index du périphérique sélectionné
-        for name, idx in self.input_devices:
-            if name == selection:
-                device_index = idx
-                break
-        
-        if device_index is not None and device_index != self.current_device:
-            self.current_device = device_index
-            # Redémarrer le flux audio avec le nouveau périphérique
-            self.restart_audio_stream()
+        try:
+            selection = self.device_combo.get()
+            device_index = None
+            
+            # Trouver l'index du périphérique sélectionné
+            for name, idx in self.input_devices:
+                if name == selection:
+                    device_index = idx
+                    break
+            
+            if device_index is not None and device_index != self.current_device:
+                self.current_device = device_index
+                # Redémarrer le flux audio avec le nouveau périphérique
+                self.restart_audio_stream()
+        except Exception as e:
+            error_msg = f"Erreur lors du changement de périphérique: {str(e)}"
+            print(error_msg)
+            self.show_error_message(error_msg)
     
     def restart_audio_stream(self):
         """Redémarre le flux audio avec le nouveau périphérique"""
         # Fermer l'ancien flux s'il existe
         if self.stream is not None:
-            self.stream.stop_stream()
-            self.stream.close()
+            try:
+                self.stream.stop_stream()
+                self.stream.close()
+            except Exception as e:
+                print(f"Error closing previous stream: {str(e)}")
         
         # Créer un nouveau flux avec le périphérique sélectionné
         try:
@@ -116,119 +211,190 @@ class GuitarTuner:
                 input_device_index=self.current_device,
                 frames_per_buffer=self.CHUNK
             )
+            print(f"Successfully opened audio stream for device index {self.current_device}")
         except Exception as e:
-            print(f"Erreur lors de l'ouverture du périphérique audio: {e}")
+            error_msg = f"Erreur lors de l'ouverture du périphérique audio: {str(e)}"
+            print(error_msg)
+            # Reset stream to None
+            self.stream = None
+            # Update UI to show error
+            self.show_error_message(error_msg)
     
+    def show_error_message(self, message):
+        """Affiche un message d'erreur dans l'interface"""
+        # Update the note display to show error
+        self.detected_note_label.config(text="!", foreground=COLORS['error'])
+        self.octave_label.config(text="Erreur périphérique")
+        self.freq_label.config(text="--")
+        self.cents_label.config(text=message[:20] + "..." if len(message) > 20 else message)
+        
+        # Reset the needle to center
+        self.canvas.delete("needle")
+        canvas_width = 250
+        canvas_center = canvas_width // 2
+        self.canvas.create_line(canvas_center, 30, canvas_center, 30, 
+                              fill=COLORS['error'], width=3, tags="needle")
+
     def create_gui(self):
         # Création du cadre principal avec padding et background
-        main_frame = ttk.Frame(self.root, padding="20", style='TFrame')
+        main_frame = ttk.Frame(self.root, padding="10", style='TFrame')
         main_frame.grid(row=0, column=0, sticky="nsew")
         
-        # Configure grid weights for centering
-        main_frame.columnconfigure(0, weight=1)
-        for i in range(9):
-            main_frame.rowconfigure(i, weight=1)
+        # Configure root grid weights for centering
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        
+        # Configure main frame grid weights for centering
+        main_frame.grid_columnconfigure(0, weight=1)
+        for i in range(9):  # We have 9 rows in total
+            main_frame.grid_rowconfigure(i, weight=1)
         
         # Création du sélecteur de périphérique audio avec style moderne
         device_frame = ttk.Frame(main_frame, style='TFrame')
-        device_frame.grid(row=0, column=0, pady=10, sticky="ew")
-        device_frame.columnconfigure(1, weight=1)
+        device_frame.grid(row=0, column=0, pady=5, sticky="ew")
+        device_frame.grid_columnconfigure(0, weight=1)
+        device_frame.grid_rowconfigure(0, weight=1)
         
-        ttk.Label(device_frame, text="Entrée:", style='TLabel').grid(row=0, column=0, padx=5)
+        # Style the input label
+        input_label = ttk.Label(device_frame, text="Entrée:", style='TLabel')
+        input_label.grid(row=0, column=0, padx=5)
         
         self.input_devices = self.get_input_devices()
         device_names = [name for name, _ in self.input_devices]
         
-        self.device_combo = ttk.Combobox(device_frame, values=device_names, width=35, style='TCombobox')
+        # Style the device combobox
+        self.device_combo = ttk.Combobox(device_frame, 
+                                       values=device_names, 
+                                       width=30, 
+                                       style='TCombobox',
+                                       state='readonly')
         if device_names:
             self.device_combo.set(device_names[0])
             self.current_device = self.input_devices[0][1]
         self.device_combo.grid(row=0, column=1, padx=5, sticky="ew")
         self.device_combo.bind('<<ComboboxSelected>>', self.on_device_change)
         
-        # Création de l'affichage de la note détectée avec style moderne
+        # Center frames for all elements
         note_frame = ttk.Frame(main_frame, style='TFrame')
-        note_frame.grid(row=1, column=0, pady=(20,10))
-        self.detected_note_label = ttk.Label(note_frame, text="--", font=("Arial", 120, "bold"), style='TLabel')
-        self.detected_note_label.pack(anchor="center")
+        note_frame.grid(row=1, column=0, pady=(20,10), sticky="nsew")
+        note_frame.grid_columnconfigure(0, weight=1)
+        note_frame.grid_rowconfigure(0, weight=1)
+        self.detected_note_label = ttk.Label(note_frame, text="--", font=("Arial", 100, "bold"), style='TLabel')
+        self.detected_note_label.grid(row=0, column=0)
         
-        # Création de l'affichage de l'octave avec style moderne
         octave_frame = ttk.Frame(main_frame, style='TFrame')
-        octave_frame.grid(row=2, column=0, pady=10)
-        self.octave_label = ttk.Label(octave_frame, text="Octave: --", font=("Arial", 24), style='TLabel')
-        self.octave_label.pack(anchor="center")
+        octave_frame.grid(row=2, column=0, pady=5, sticky="nsew")
+        octave_frame.grid_columnconfigure(0, weight=1)
+        octave_frame.grid_rowconfigure(0, weight=1)
+        self.octave_label = ttk.Label(octave_frame, text="Octave: --", font=("Arial", 20), style='TLabel')
+        self.octave_label.grid(row=0, column=0)
         
-        # Création de l'affichage de la fréquence avec style moderne
         freq_frame = ttk.Frame(main_frame, style='TFrame')
-        freq_frame.grid(row=3, column=0, pady=10)
-        self.freq_label = ttk.Label(freq_frame, text="0 Hz", font=("Arial", 24), style='TLabel')
-        self.freq_label.pack(anchor="center")
+        freq_frame.grid(row=3, column=0, pady=5, sticky="nsew")
+        freq_frame.grid_columnconfigure(0, weight=1)
+        freq_frame.grid_rowconfigure(0, weight=1)
+        self.freq_label = ttk.Label(freq_frame, text="0 Hz", font=("Arial", 20), style='TLabel')
+        self.freq_label.grid(row=0, column=0)
         
-        # Création de l'affichage de la déviation en cents avec style moderne
         cents_frame = ttk.Frame(main_frame, style='TFrame')
-        cents_frame.grid(row=4, column=0, pady=10)
-        self.cents_label = ttk.Label(cents_frame, text="± 0 cents", font=("Arial", 24), style='TLabel')
-        self.cents_label.pack(anchor="center")
+        cents_frame.grid(row=4, column=0, pady=5, sticky="nsew")
+        cents_frame.grid_columnconfigure(0, weight=1)
+        cents_frame.grid_rowconfigure(0, weight=1)
+        self.cents_label = ttk.Label(cents_frame, text="± 0 cents", font=("Arial", 20), style='TLabel')
+        self.cents_label.grid(row=0, column=0)
         
         # Création de l'indicateur d'accordage avec style moderne
         self.tuning_frame = ttk.Frame(main_frame, style='TFrame')
-        self.tuning_frame.grid(row=5, column=0, pady=20)
+        self.tuning_frame.grid(row=5, column=0, pady=10, sticky="nsew")
+        self.tuning_frame.grid_columnconfigure(0, weight=1)
+        self.tuning_frame.grid_rowconfigure(0, weight=1)
         
         # Création du canevas pour l'affichage de l'aiguille avec fond sombre
-        self.canvas = tk.Canvas(self.tuning_frame, width=300, height=80, bg=COLORS['secondary'])
-        self.canvas.pack(anchor="center")
+        self.canvas = tk.Canvas(self.tuning_frame, width=250, height=60, bg=COLORS['secondary'])
+        self.canvas.grid(row=0, column=0)
         
         # Dessin de la base de l'aiguille et des marqueurs
         self.draw_tuning_scale()
         
         # Création du sélecteur de cordes avec style moderne
         string_frame = ttk.Frame(main_frame, style='TFrame')
-        string_frame.grid(row=6, column=0, pady=20)
+        string_frame.grid(row=6, column=0, pady=10, sticky="nsew")
+        string_frame.grid_columnconfigure(0, weight=1)
+        string_frame.grid_rowconfigure(0, weight=1)
         
-        self.string_var = tk.StringVar(value="E")
-        strings = ["E", "A", "D", "G", "B", "E"]
-        for i, string in enumerate(strings):
-            ttk.Radiobutton(string_frame, text=string, variable=self.string_var,
-                          value=string, style='TRadiobutton').pack(side="left", padx=10)
+        # Create an inner frame for the radio buttons to center them as a group
+        string_buttons_frame = ttk.Frame(string_frame, style='TFrame')
+        string_buttons_frame.grid(row=0, column=0)
+        
+        self.string_var = tk.StringVar(value="E2")  # Default to low E
+        strings = [("E2", "E ⬇"), ("A2", "A"), ("D3", "D"), ("G3", "G"), ("B3", "B"), ("E4", "E ⬆")]  # (value, display_text)
+        for value, display_text in strings:
+            ttk.Radiobutton(string_buttons_frame, 
+                          text=display_text, 
+                          variable=self.string_var,
+                          value=value, 
+                          style='TRadiobutton').pack(side="left", padx=5)
         
         # Création du sélecteur de décalage d'accordage avec style moderne
         tuning_frame = ttk.Frame(main_frame, style='TFrame')
-        tuning_frame.grid(row=7, column=0, pady=20)
+        tuning_frame.grid(row=7, column=0, pady=10, sticky="nsew")
+        tuning_frame.grid_columnconfigure(0, weight=1)
+        tuning_frame.grid_rowconfigure(0, weight=1)
         
-        ttk.Label(tuning_frame, text="Décalage:", style='TLabel').pack(side="left", padx=5)
+        # Create an inner frame for the tuning controls to center them as a group
+        tuning_controls_frame = ttk.Frame(tuning_frame, style='TFrame')
+        tuning_controls_frame.grid(row=0, column=0)
+        
+        # Style the tuning controls
+        ttk.Label(tuning_controls_frame, 
+                 text="Décalage:", 
+                 style='TLabel').pack(side="left", padx=5)
         
         self.offset_var = tk.StringVar(value="0")
-        offset_combo = ttk.Combobox(tuning_frame, textvariable=self.offset_var, width=3, style='TCombobox')
+        offset_combo = ttk.Combobox(tuning_controls_frame, 
+                                  textvariable=self.offset_var, 
+                                  width=3, 
+                                  style='TCombobox',
+                                  state='readonly',
+                                  justify='center')
         offset_combo['values'] = [str(i) for i in range(-12, 13)]
         offset_combo.pack(side="left", padx=5)
         offset_combo.bind('<<ComboboxSelected>>', self.on_offset_change)
         
-        ttk.Label(tuning_frame, text="demi-tons", style='TLabel').pack(side="left", padx=5)
+        ttk.Label(tuning_controls_frame, 
+                 text="demi-tons", 
+                 style='TLabel').pack(side="left", padx=5)
         
-        # Ajout du bouton Quitter avec style moderne
+        # Style the quit button
         quit_frame = ttk.Frame(main_frame, style='TFrame')
-        quit_frame.grid(row=8, column=0, pady=20)
-        quit_button = ttk.Button(quit_frame, text="Quitter", command=self.close, style='TButton')
-        quit_button.pack(anchor="center")
+        quit_frame.grid(row=8, column=0, pady=20, sticky="nsew")
+        quit_frame.grid_columnconfigure(0, weight=1)
+        quit_frame.grid_rowconfigure(0, weight=1)
+        
+        quit_button = ttk.Button(quit_frame, 
+                               text="Quitter",
+                               command=self.close,
+                               style='Quit.TButton')  # Use the specific quit button style
+        quit_button.grid(row=0, column=0, padx=10, pady=5)
         
         # Initialize audio stream with default device
         self.restart_audio_stream()
     
     def draw_tuning_scale(self):
         # Adjust canvas dimensions
-        canvas_width = 300
+        canvas_width = 250
         canvas_center = canvas_width // 2
         
         # Dessin de la ligne centrale
-        self.canvas.create_line(canvas_center, 0, canvas_center, 80, fill=COLORS['text'], width=2)
+        self.canvas.create_line(canvas_center, 0, canvas_center, 60, fill=COLORS['text'], width=2)
         
         # Dessin des marqueurs d'échelle
         for i in range(-50, 51, 10):
-            x = canvas_center + (i * 1.5)
-            height = 15 if i % 20 == 0 else 8
-            self.canvas.create_line(x, 40-height, x, 40+height, fill=COLORS['text'])
+            x = canvas_center + (i * 1.25)  # Reduced scale factor for smaller width
+            height = 12 if i % 20 == 0 else 6
+            self.canvas.create_line(x, 30-height, x, 30+height, fill=COLORS['text'])
             if i % 20 == 0 and i != 0:
-                self.canvas.create_text(x, 65, text=str(i), fill=COLORS['text'], font=("Arial", 8))
+                self.canvas.create_text(x, 50, text=str(i), fill=COLORS['text'], font=("Arial", 8))
     
     def frequency_to_note(self, frequency):
         if frequency <= 0:
@@ -262,7 +428,7 @@ class GuitarTuner:
                 continue
                 
             try:
-                data = self.stream.read(self.CHUNK)
+                data = self.stream.read(self.CHUNK, exception_on_overflow=False)
                 audio_data = np.frombuffer(data, dtype=np.float32)
                 
                 # Exécution de la FFT
@@ -281,12 +447,17 @@ class GuitarTuner:
                 
             except Exception as e:
                 if self.running:
-                    print(f"Erreur lors du traitement audio: {e}")
+                    error_msg = f"Erreur lors du traitement audio: {str(e)}"
+                    print(error_msg)
+                    self.root.after(0, self.show_error_message, error_msg)
                 time.sleep(0.1)  # Pause before retrying
         
         if self.stream:
-            self.stream.stop_stream()
-            self.stream.close()
+            try:
+                self.stream.stop_stream()
+                self.stream.close()
+            except Exception as e:
+                print(f"Error closing stream during shutdown: {str(e)}")
     
     def update_display(self, frequency):
         # Obtention des informations de la note
@@ -300,9 +471,9 @@ class GuitarTuner:
         
         # Mise à jour de la position de l'aiguille
         self.canvas.delete("needle")
-        canvas_width = 300
+        canvas_width = 250
         canvas_center = canvas_width // 2
-        needle_x = canvas_center + (cents * 1.5)
+        needle_x = canvas_center + (cents * 1.25)  # Adjusted scale factor to match new width
         
         # Change needle color based on tuning accuracy
         if abs(cents) < 5:
@@ -315,7 +486,7 @@ class GuitarTuner:
             needle_color = COLORS['error']
             self.detected_note_label.config(foreground=COLORS['error'])
             
-        self.canvas.create_line(canvas_center, 40, needle_x, 40, fill=needle_color, width=3, tags="needle")
+        self.canvas.create_line(canvas_center, 30, needle_x, 30, fill=needle_color, width=3, tags="needle")
 
     def close(self):
         """Arrêt correct de l'application"""
