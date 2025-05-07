@@ -1,3 +1,8 @@
+# DISCLAIMER
+## This project is far from being complete and still in development when i can put time into it
+
+
+
 # Guitar Tuner
 
 A modern, user-friendly guitar tuner application built with Python. This application provides real-time pitch detection and visual feedback to help you tune your guitar accurately.
